@@ -72,23 +72,11 @@ foreach ($name in @("README.md", "LICENSE", "LICENSE.zh-CN.md")) {
 
 # 中文文件名用字符码写出，避免 PowerShell 5.1 默认编码破坏文件名。
 $notePath = Join-Path $ResolvedOut ([char]0x4f7f + [char]0x7528 + [char]0x8bf4 + [char]0x660e + ".txt")
-$note = @"
-元数据管理 ClearMeta $Version（便携版）
-
-解压即用，无需安装。所有处理在本机完成，不联网、不上传文件。
-
-使用要点：
-1. 点击或拖拽添加 PDF / Office / 图片文件。
-2. 选择「另存到新目录」并指定输出目录（推荐），或选择「覆盖原文件」（自动备份，可撤销）。
-3. 选择快速预设或逐项编辑元数据，点「应用更改」。
-4. 处理结果可导出 CSV / JSON 报告。
-
-单次最多 500 个文件；覆盖前自动备份，可在结果列表点「撤销」还原。
-
-MIT 开源许可，详见 LICENSE 与 LICENSE.zh-CN.md。
-官网：https://inkdot.cn
-"@
-[System.IO.File]::WriteAllText($notePath, $note, [System.Text.UTF8Encoding]::new($true))
+$noteTemplate = Join-Path $Root "docs\portable-readme.txt"
+if (Test-Path $noteTemplate -PathType Leaf) {
+    $note = (Get-Content $noteTemplate -Raw -Encoding UTF8).Replace("{{VERSION}}", $Version)
+    [System.IO.File]::WriteAllText($notePath, $note, [System.Text.UTF8Encoding]::new($true))
+}
 
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
 Compress-Archive -Path $ResolvedOut -DestinationPath $ZipPath -Force
