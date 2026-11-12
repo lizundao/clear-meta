@@ -31,3 +31,6 @@ release/
 
 # 本地预览截图（不入库）
 .preview-shots/
+
+# 官网教程配图源截图（仅供 E:\Node\inkdot 生成配图，不入库）
+ScreenShot_*.png
