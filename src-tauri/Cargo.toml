@@ -1,0 +1,33 @@
+[package]
+name = "clear-meta"
+version = "0.1.0"
+description = "桌面工具：PDF / Office / 图片元数据管理"
+authors = ["clear-meta"]
+edition = "2021"
+
+[lib]
+name = "clear_meta_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lopdf = "0.34"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+thiserror = "2"
+regex = "1"
+kamadak-exif = "0.6"
+walkdir = "2"
+
+[profile.release]
+# 文件处理路径上不允许 unwind 穿越 FFI 边界；任何异常直接终止，避免半写入状态。
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = true
