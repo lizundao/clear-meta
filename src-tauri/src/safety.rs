@@ -242,8 +242,22 @@ mod tests {
 
     #[test]
     fn report_path_rejects_bad_extension() {
-        assert!(ensure_report_path(Path::new("C:/tmp/report.exe")).is_err());
-        assert!(ensure_report_path(Path::new("C:/tmp/report.csv")).is_ok());
+        // 用系统临时目录而非硬编码 C:/tmp：CI runner 上不一定存在 C:\tmp，
+        // 而 ensure_report_path 会校验父目录 is_dir()，硬编码盘符会导致脆弱失败。
+        let dir = std::env::temp_dir();
+        assert!(dir.is_dir());
+        assert!(ensure_report_path(&dir.join("report.exe")).is_err());
+        assert!(ensure_report_path(&dir.join("report.csv")).is_ok());
+    }
+
+    #[test]
+    fn report_path_rejects_missing_parent_dir() {
+        // 父目录不存在时必须报错，不依赖任何真实盘符。
+        let missing = std::env::temp_dir().join("clear_meta_no_such_dir_998877");
+        if missing.exists() {
+            return; // 极端情况下目录被占用则跳过，避免误判
+        }
+        assert!(ensure_report_path(&missing.join("report.csv")).is_err());
     }
 
     #[test]
