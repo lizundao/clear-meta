@@ -109,7 +109,16 @@ pub fn apply_file(input: &Path, output: &Path, rules: &[FieldRule], clear_all: b
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    if is_pdf_ext(&ext) {
+    // 原地覆盖时保留原文件时间戳：处理动作本身不应留在资源管理器的
+    // 修改时间 / 创建时间里。还原只在覆盖成功后进行，失败仅记录不阻断。
+    let in_place = input == output;
+    let times = if in_place {
+        safety::capture_times(input).ok()
+    } else {
+        None
+    };
+
+    let result = if is_pdf_ext(&ext) {
         pdf::apply_pdf(input, output, rules, clear_all)
     } else if is_office_ext(&ext) {
         office::apply_office(input, output, rules, clear_all)
@@ -117,7 +126,17 @@ pub fn apply_file(input: &Path, output: &Path, rules: &[FieldRule], clear_all: b
         image::apply_image(input, output, rules, clear_all)
     } else {
         Err(ClearMetaError::UnsupportedFormat(ext))
+    };
+
+    if let (true, Some(t)) = (in_place, times) {
+        if result.is_ok() {
+            if let Err(err) = safety::restore_times(output, &t) {
+                eprintln!("时间戳还原失败 {}: {}", output.display(), err);
+            }
+        }
     }
+
+    result
 }
 
 pub fn resolve_output_path(input: &Path, options: &ApplyOptions) -> Result<PathBuf> {

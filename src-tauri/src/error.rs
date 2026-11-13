@@ -32,6 +32,9 @@ pub enum ClearMetaError {
     #[error("文件结构损坏: {0}")]
     Corrupted(String),
 
+    #[error("文件正被其他程序占用，无法覆盖: {0}。请先关闭正在使用该文件的程序（预览、编辑器等）后重试")]
+    FileLocked(String),
+
     #[error("疑似压缩包炸弹: {0}")]
     ArchiveBomb(String),
 

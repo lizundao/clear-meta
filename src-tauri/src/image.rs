@@ -166,7 +166,7 @@ fn write_output(input: &Path, output: &Path, data: &[u8]) -> Result<()> {
         // 并发安全的临时名，避免多窗口 / 多次调用争用同一临时文件。
         let temp = safety::temp_path(input);
         std::fs::write(&temp, data)?;
-        std::fs::rename(&temp, output)?;
+        safety::replace_file(&temp, output)?;
     } else {
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent)?;

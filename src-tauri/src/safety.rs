@@ -181,8 +181,131 @@ pub fn restore_backup(app: &tauri::AppHandle, backup: &Path, target: &Path) -> R
     }
     let tmp = target.with_extension(format!("clear_meta_restore_{}.tmp", std::process::id()));
     std::fs::copy(&canon_backup, &tmp)?;
-    std::fs::rename(&tmp, target)?;
+    replace_file(&tmp, target)?;
     Ok(())
+}
+
+/// 把 `from` 覆盖为 `to`。
+///
+/// Windows 上 rename 覆盖已有文件时，只要目标（或源）被任何进程打开——
+/// 包括杀毒软件 / 索引服务对刚写出的临时文件的短暂扫描——就会报
+/// 「另一个程序正在使用此文件 (os error 32/5)」。这类占用都是瞬时的，
+/// 因此这里先短暂重试；重试仍失败才报 FileLocked，让前端给出明确指引。
+pub fn replace_file(from: &Path, to: &Path) -> Result<()> {
+    const RETRIES: usize = 6;
+    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(150);
+
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 0..RETRIES {
+        if attempt > 0 {
+            std::thread::sleep(INTERVAL);
+        }
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(err) if is_busy_error(&err) => {
+                last_err = Some(err);
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Err(ClearMetaError::FileLocked(
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "重试后仍被占用".into()),
+    ))
+}
+
+/// 判断是否为「文件被占用」类错误（共享冲突 / 拒绝访问）。
+fn is_busy_error(err: &std::io::Error) -> bool {
+    match err.raw_os_error() {
+        // 32: ERROR_SHARING_VIOLATION, 33: ERROR_LOCK_VIOLATION, 5: ERROR_ACCESS_DENIED
+        Some(32) | Some(33) | Some(5) => true,
+        _ => matches!(
+            err.kind(),
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AlreadyExists
+        ),
+    }
+}
+
+/// 原文件时间戳快照：覆盖后还原，避免「处理时间」暴露在资源管理器里。
+#[derive(Debug, Clone, Copy)]
+pub struct OriginalTimes {
+    pub created: Option<std::time::SystemTime>,
+    pub modified: std::time::SystemTime,
+    pub accessed: std::time::SystemTime,
+}
+
+/// 读取文件当前的三类时间戳。
+pub fn capture_times(path: &Path) -> Result<OriginalTimes> {
+    let meta = std::fs::metadata(path)?;
+    Ok(OriginalTimes {
+        created: meta.created().ok(),
+        modified: meta.modified()?,
+        accessed: meta.accessed()?,
+    })
+}
+
+/// 把文件时间戳还原为快照值。修改/访问时间必须成功；创建时间尽力还原（Windows）。
+pub fn restore_times(path: &Path, times: &OriginalTimes) -> Result<()> {
+    let m = filetime::FileTime::from_system_time(times.modified);
+    let a = filetime::FileTime::from_system_time(times.accessed);
+    filetime::set_file_times(path, a, m)?;
+
+    #[cfg(windows)]
+    if let Some(created) = times.created {
+        restore_created_time_windows(path, created);
+    }
+    Ok(())
+}
+
+/// Windows 上还原创建时间：SetFileTime 需要 FILE_WRITE_ATTRIBUTES 的句柄。
+/// 还原失败不影响整体（时间戳主体是修改时间），静默忽略。
+#[cfg(windows)]
+fn restore_created_time_windows(path: &Path, created: std::time::SystemTime) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, SetFileTime, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES,
+        OPEN_EXISTING,
+    };
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            FILE_WRITE_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut() as *mut core::ffi::c_void,
+        )
+    };
+    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return;
+    }
+
+    // SystemTime → FILETIME（100ns since 1601-01-01）
+    const EPOCH_DIFF_SECS: u64 = 11_644_473_600;
+    let ft: i64 = match created
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| (EPOCH_DIFF_SECS + d.as_secs()) as i64 * 10_000_000 + d.subsec_nanos() as i64 / 100)
+    {
+        Some(v) => v,
+        None => {
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+            return;
+        }
+    };
+
+    unsafe {
+        SetFileTime(handle, &ft as *const i64 as *const _, std::ptr::null(), std::ptr::null());
+        windows_sys::Win32::Foundation::CloseHandle(handle);
+    }
 }
 
 /// 报告导出路径校验：仅 .csv/.json、无 `..`、不在系统目录、父目录存在。

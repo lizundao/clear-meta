@@ -219,7 +219,8 @@ pub fn apply_office(input: &Path, output: &Path, rules: &[FieldRule], clear_all:
         .map_err(|e| ClearMetaError::Office(e.to_string()))?;
 
     if input == output {
-        std::fs::rename(&target, output)?;
+        drop(archive);
+        safety::replace_file(&target, output)?;
     }
 
     Ok(())
@@ -278,7 +279,8 @@ fn clear_office_all(input: &Path, output: &Path) -> Result<()> {
         .map_err(|e| ClearMetaError::Office(e.to_string()))?;
 
     if input == output {
-        std::fs::rename(&target, output)?;
+        drop(archive);
+        safety::replace_file(&target, output)?;
     }
 
     Ok(())

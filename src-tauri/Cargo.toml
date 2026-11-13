@@ -24,6 +24,7 @@ thiserror = "2"
 regex = "1"
 kamadak-exif = "0.6"
 walkdir = "2"
+filetime = "0.2"
 
 [profile.release]
 # 文件处理路径上不允许 unwind 穿越 FFI 边界；任何异常直接终止，避免半写入状态。
@@ -31,3 +32,6 @@ panic = "abort"
 lto = true
 codegen-units = 1
 strip = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security"] }

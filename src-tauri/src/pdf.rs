@@ -184,7 +184,7 @@ fn save_pdf(doc: &mut Document, input: &Path, output: &Path) -> Result<()> {
             let _ = std::fs::remove_file(&temp);
             return Err(ClearMetaError::Corrupted("输出 PDF 页数为 0，已放弃覆盖".into()));
         }
-        std::fs::rename(&temp, output)?;
+        safety::replace_file(&temp, output)?;
     } else {
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent)?;

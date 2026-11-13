@@ -8,9 +8,9 @@ mod processor;
 mod safety;
 use apply::ApplyOptions;
 use error::{ClearMetaError, Result};
+pub use processor::{apply_file, read_file_metadata};
 use processor::{
-    apply_file, apply_options_clear_all, is_supported_path, read_file_metadata, resolve_output_path,
-    scan_folder, SupportedFormats,
+    apply_options_clear_all, is_supported_path, resolve_output_path, scan_folder, SupportedFormats,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -145,7 +145,7 @@ fn process_one(app: &tauri::AppHandle, path: &str, options: &ApplyOptions) -> Pr
     let before_count = before_fields.len();
     let clear_all = apply_options_clear_all(options);
 
-    // 覆盖原文件前先备份，失败可恢复。
+    // 覆盖原文件前先备份，失败可恢复。（时间戳还原在 processor::apply_file 内统一处理）
     let mut backup_path: Option<String> = None;
     if matches!(options.output_mode, OutputMode::InPlace) {
         match safety::make_backup(app, &input) {
@@ -205,7 +205,11 @@ fn process_one(app: &tauri::AppHandle, path: &str, options: &ApplyOptions) -> Pr
         }
         Err(err) => {
             // 覆盖失败时尝试回滚到备份，尽量不让用户丢失原始文件。
-            if let Some(b) = backup_path.as_ref() {
+            // 「文件被占用」发生在最后一步 rename：原文件未被改动，无需也不应回滚
+            // （回滚同样会被占用拦截，只会产生误导性的双重报错）。
+            if let Some(b) = backup_path.as_ref().filter(|_| {
+                !matches!(err, ClearMetaError::FileLocked(_))
+            }) {
                 if let Err(rollback_err) =
                     safety::restore_backup(app, Path::new(b), &input)
                 {
