@@ -1,4 +1,4 @@
-# Build release and package Windows portable ZIP.
+﻿# Build release and package Windows portable ZIP.
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1             # build + package
 #   powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1 -SkipBuild  # package only
