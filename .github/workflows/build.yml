@@ -94,6 +94,8 @@ jobs:
 
       - name: 规范化安装版文件名为 ASCII
         shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           $nsis = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
           if (-not $nsis) { throw '未找到 NSIS 安装包' }
