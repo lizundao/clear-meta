@@ -1,6 +1,6 @@
 [package]
 name = "clear-meta"
-version = "0.1.0"
+version = "0.1.1"
 description = "桌面工具：PDF / Office / 图片元数据管理"
 authors = ["clear-meta"]
 edition = "2021"

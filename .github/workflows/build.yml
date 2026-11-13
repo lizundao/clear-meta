@@ -2,14 +2,14 @@ name: 打包与发布（Windows / macOS）
 
 # 触发方式：
 #   1) push / PR 到 main：只跑类型检查与回归，不打包
-#   2) 打 tag：git tag v0.1.0 && git push origin v0.1.0 → 构建并创建草稿 Release
+#   2) 打 tag：git tag v0.1.1 && git push origin v0.1.1 → 构建并创建草稿 Release
 #   3) 手动：Actions 页 → Run workflow（重新打包验证）
 #
-# 产物统一 ASCII 命名，四件套：
-#   ClearMeta-0.1.0-setup-win-x64.exe
-#   ClearMeta-0.1.0-portable-win-x64.zip
-#   ClearMeta-0.1.0-aarch64.dmg
-#   ClearMeta-0.1.0-aarch64.app.zip
+# 产物统一 ASCII 命名，四件套（版本号取自 package.json）：
+#   ClearMeta-<version>-setup-win-x64.exe
+#   ClearMeta-<version>-portable-win-x64.zip
+#   ClearMeta-<version>-aarch64.dmg
+#   ClearMeta-<version>-aarch64.app.zip
 
 on:
   workflow_dispatch:
@@ -58,6 +58,14 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 读取版本号
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Output "版本：$v"
+
       - name: Rust 文件处理回归
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
@@ -66,8 +74,11 @@ jobs:
 
       - name: 打包便携版 zip（exe + 文档 + 许可）
         shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          $root = 'release/ClearMeta-0.1.0-portable-win-x64'
+          $ver = $env:APP_VERSION
+          $root = "release/ClearMeta-$ver-portable-win-x64"
           New-Item -ItemType Directory -Force -Path $root | Out-Null
           Copy-Item src-tauri/target/release/clear-meta.exe $root
           New-Item -ItemType Directory -Force -Path (Join-Path $root 'docs') | Out-Null
@@ -77,24 +88,24 @@ jobs:
           }
           # 从模板读取，避免多行字符串破坏 workflow 的 YAML 结构。
           $notePath = Join-Path $root ([char]0x4f7f + [char]0x7528 + [char]0x8bf4 + [char]0x660e + '.txt')
-          $note = (Get-Content docs/portable-readme.txt -Raw -Encoding UTF8).Replace('{{VERSION}}', '0.1.0')
+          $note = (Get-Content docs/portable-readme.txt -Raw -Encoding UTF8).Replace('{{VERSION}}', $ver)
           [System.IO.File]::WriteAllText($notePath, $note, [System.Text.UTF8Encoding]::new($true))
-          Compress-Archive -Path $root -DestinationPath 'release/ClearMeta-0.1.0-portable-win-x64.zip' -Force
+          Compress-Archive -Path $root -DestinationPath "release/ClearMeta-$ver-portable-win-x64.zip" -Force
 
       - name: 规范化安装版文件名为 ASCII
         shell: pwsh
         run: |
           $nsis = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
           if (-not $nsis) { throw '未找到 NSIS 安装包' }
-          Copy-Item $nsis.FullName 'release/ClearMeta-0.1.0-setup-win-x64.exe' -Force
+          Copy-Item $nsis.FullName "release/ClearMeta-$($env:APP_VERSION)-setup-win-x64.exe" -Force
 
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer-and-portable
           path: |
-            release/ClearMeta-0.1.0-setup-win-x64.exe
-            release/ClearMeta-0.1.0-portable-win-x64.zip
+            release/ClearMeta-${{ steps.ver.outputs.version }}-setup-win-x64.exe
+            release/ClearMeta-${{ steps.ver.outputs.version }}-portable-win-x64.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -121,6 +132,10 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
+      - name: 读取版本号
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       # 未签名构建：首次打开可能触发 Gatekeeper，可执行 xattr -dr com.apple.quarantine。
       - name: 构建 Tauri（macOS .app + .dmg）
         run: npm run tauri build -- --target aarch64-apple-darwin --bundles app,dmg
@@ -134,8 +149,8 @@ jobs:
           app=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -n 1)
           [ -n "$dmg" ] || { echo "未找到 dmg"; exit 1; }
           [ -n "$app" ] || { echo "未找到 app"; exit 1; }
-          cp "$dmg" release/ClearMeta-0.1.0-aarch64.dmg
-          ditto -c -k --keepParent "$app" release/ClearMeta-0.1.0-aarch64.app.zip
+          cp "$dmg" "release/ClearMeta-${{ steps.ver.outputs.version }}-aarch64.dmg"
+          ditto -c -k --keepParent "$app" "release/ClearMeta-${{ steps.ver.outputs.version }}-aarch64.app.zip"
           ls -lh release/
 
       - name: 上传 macOS 产物
@@ -143,8 +158,8 @@ jobs:
         with:
           name: macos-apple-silicon
           path: |
-            release/ClearMeta-0.1.0-aarch64.dmg
-            release/ClearMeta-0.1.0-aarch64.app.zip
+            release/ClearMeta-${{ steps.ver.outputs.version }}-aarch64.dmg
+            release/ClearMeta-${{ steps.ver.outputs.version }}-aarch64.app.zip
           if-no-files-found: error
           retention-days: 7
 
