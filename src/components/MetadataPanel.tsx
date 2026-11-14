@@ -1,6 +1,6 @@
 import MetadataEditor from "./MetadataEditor";
 import type { CompareData, FieldEditState, MetadataField, PreviewMode } from "../types";
-import { buildCompareRows } from "../utils/report";
+import { buildCompareRows, FS_GROUP } from "../utils/report";
 
 interface MetadataPanelProps {
   fileName: string;
@@ -37,13 +37,27 @@ function FieldTable({ fields }: { fields: MetadataField[] }) {
     <div className="metadata-groups">
       {grouped.map(([group, items]) => (
         <div key={group} className="metadata-group">
-          <h3>{group}</h3>
+          <h3>
+            {group}
+            {group === FS_GROUP && (
+              <span className="fs-note">
+                来自文件系统，即资源管理器右键属性里的时间；不属于文档内容，清除时不会被改动
+              </span>
+            )}
+          </h3>
           <table className="metadata-table">
             <tbody>
               {items.map((field) => (
                 <tr key={field.key}>
                   <th>{field.name}</th>
-                  <td>{field.value}</td>
+                  <td>
+                    {field.value}
+                    {field.raw && (
+                      <span className="field-raw" title="文件里实际存的值">
+                        原文 {field.raw}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -70,6 +84,13 @@ export default function MetadataPanel({
 }: MetadataPanelProps) {
   const showCompare = !!compare;
   const showEdit = !showCompare && !!preview && preview.length > 0;
+  // 统计与对比只针对文档元数据；文件属性（资源管理器时间）仅展示，不参与计数。
+  const beforeMetaCount = compare
+    ? compare.before.filter((f) => f.group !== FS_GROUP).length
+    : 0;
+  const afterMetaCount = compare
+    ? compare.after.filter((f) => f.group !== FS_GROUP).length
+    : 0;
 
   return (
     <>
@@ -94,11 +115,11 @@ export default function MetadataPanel({
       {showCompare && (
         <>
           <div className="compare-stats">
-            <span className="stat-chip before">处理前 {compare.beforeCount} 项</span>
+            <span className="stat-chip before">处理前 {beforeMetaCount} 项</span>
             <span className="stat-arrow">→</span>
-            <span className="stat-chip after">处理后 {compare.afterCount} 项</span>
+            <span className="stat-chip after">处理后 {afterMetaCount} 项</span>
             <span className="stat-chip removed">
-              已变更 {compare.beforeCount - compare.afterCount} 项
+              已变更 {beforeMetaCount - afterMetaCount} 项
             </span>
           </div>
 
@@ -164,7 +185,7 @@ export default function MetadataPanel({
       {compare && mode === "before" && <FieldTable fields={compare.before} />}
 
       {compare && mode === "after" && (
-        compare.after.length > 0 ? (
+        afterMetaCount > 0 ? (
           <FieldTable fields={compare.after} />
         ) : (
           <div className="empty-block success-block">元数据已全部清除</div>
@@ -173,7 +194,10 @@ export default function MetadataPanel({
 
       {compare && mode === "compare" && (
         <div className="compare-table-wrap">
-          <CompareTable before={compare.before} after={compare.after} />
+          <CompareTable
+            before={compare.before.filter((f) => f.group !== FS_GROUP)}
+            after={compare.after.filter((f) => f.group !== FS_GROUP)}
+          />
         </div>
       )}
     </>

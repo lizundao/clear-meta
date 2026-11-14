@@ -486,6 +486,18 @@ button:not(:disabled):active {
   letter-spacing: 0.04em;
 }
 
+/* 文件属性分组的补充说明：标明这是资源管理器那一套时间，不会被清除 */
+.metadata-group h3 .fs-note {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 .metadata-table {
   width: 100%;
   border-collapse: collapse;
@@ -779,6 +791,25 @@ button:not(:disabled):active {
   font-size: 0.78rem;
 }
 
+/* 文件里真实的原始串：与展示值不同时才出现，方便核对写入是否被改坏 */
+.field-raw {
+  display: block;
+  margin-top: 3px;
+  font-family: Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+/* 时间字段的格式提示 */
+.edit-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
 .action-select,
 .edit-input {
   width: 100%;
@@ -953,4 +984,120 @@ button:not(:disabled):active {
 .app-toast-error {
   border-color: var(--text-error);
   color: var(--text-error);
+}
+
+/* 时间字段：点开弹窗选择，而不是手打格式 */
+.date-pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--border-faint);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: Consolas, monospace;
+  text-align: left;
+}
+
+.date-pick:hover {
+  border-color: var(--seal, #c0392b);
+}
+
+.date-pick-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-pick-action {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* 时间选择弹窗 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 20, 24, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  padding: 20px 20px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border-faint);
+  background: var(--bg-surface);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+}
+
+.modal-title {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-datetime {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong, var(--border-faint));
+  background: var(--bg-btn-secondary, var(--bg-surface));
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: Consolas, monospace;
+}
+
+.modal-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.modal-quick button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.2;
+  border: 1px solid var(--border-faint);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.quick-value {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: Consolas, monospace;
+}
+
+.modal-hint {
+  margin: 12px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions .btn-secondary {
+  border: 1px solid var(--border-faint);
 }

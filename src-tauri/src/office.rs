@@ -105,6 +105,9 @@ const APP_FIELDS: &[(&str, &str, &str)] = &[
     ("SharedDoc", "app:SharedDoc", "共享文档"),
 ];
 
+/// core.xml 里属于时间的标签：写回必须用 W3CDTF（UTC），不能用展示文本。
+const OFFICE_DATE_TAGS: &[&str] = &["created", "modified"];
+
 pub fn read_office_metadata(path: &Path) -> Result<Vec<MetadataField>> {
     let mut archive = open_archive(path)?;
     let mut fields = Vec::new();
@@ -197,7 +200,7 @@ pub fn apply_office(input: &Path, output: &Path, rules: &[FieldRule], clear_all:
         let raw = read_entry_bounded(&mut entry, &mut total)?;
 
         let content = if is_core_properties(&name) {
-            apply_core_xml(&raw, rules)
+            apply_core_xml(&raw, rules)?
         } else if is_app_properties(&name) {
             apply_app_xml(&raw, rules)
         } else if is_custom_properties(&name) {
@@ -286,7 +289,7 @@ fn clear_office_all(input: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-fn apply_core_xml(original: &[u8], rules: &[FieldRule]) -> Vec<u8> {
+fn apply_core_xml(original: &[u8], rules: &[FieldRule]) -> Result<Vec<u8>> {
     let mut xml = String::from_utf8_lossy(original).into_owned();
     if xml.trim().is_empty() {
         xml = CORE_XML.to_string();
@@ -299,7 +302,15 @@ fn apply_core_xml(original: &[u8], rules: &[FieldRule]) -> Vec<u8> {
                 xml = metadata::remove_xml_element_by_local_name(&xml, tag);
             }
             ResolvedAction::Set(value) => {
-                let escaped = metadata::escape_xml_text(value);
+                // created / modified 是 dcterms:W3CDTF（UTC 的 ISO 8601），
+                // 写“2026-09-14 09:50:53”这种展示文本会让 Office 识别成无效时间。
+                let stored = if OFFICE_DATE_TAGS.contains(tag) {
+                    metadata::to_w3cdtf(value)
+                        .ok_or_else(|| ClearMetaError::InvalidDate(value.to_string()))?
+                } else {
+                    value.to_string()
+                };
+                let escaped = metadata::escape_xml_text(&stored);
                 let inner = core_element_xml(tag, &escaped);
                 xml = metadata::remove_xml_element_by_local_name(&xml, tag);
                 if let Some(pos) = xml.rfind("</cp:coreProperties>") {
@@ -309,7 +320,7 @@ fn apply_core_xml(original: &[u8], rules: &[FieldRule]) -> Vec<u8> {
         }
     }
 
-    xml.into_bytes()
+    Ok(xml.into_bytes())
 }
 
 fn core_element_xml(tag: &str, value: &str) -> String {

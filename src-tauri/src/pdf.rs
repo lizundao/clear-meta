@@ -30,6 +30,9 @@ const XMP_TAG_KEYS: &[(&str, &str)] = &[
     ("MetadataDate", "xmp:MetadataDate"),
 ];
 
+/// XMP 里属于时间的标签：写回时必须遵守 ISO 8601，不能写展示文本。
+const XMP_DATE_TAGS: &[&str] = &["CreateDate", "ModifyDate", "MetadataDate"];
+
 pub fn read_pdf_metadata(path: &Path) -> Result<Vec<MetadataField>> {
     let doc = Document::load(path).map_err(|e| ClearMetaError::Pdf(e.to_string()))?;
     let mut fields = Vec::new();
@@ -103,12 +106,19 @@ fn read_info_dictionary(info: &Dictionary, fields: &mut Vec<MetadataField>) {
     for (key, field_key, label, is_date) in INFO_FIELDS {
         if let Ok(value) = info.get(*key) {
             if let Some(text) = object_to_string(value) {
-                let display = if *is_date {
-                    metadata::format_pdf_date(&text)
+                if *is_date {
+                    let mut display = metadata::format_pdf_date(&text);
+                    // 标准 PDF 日期必须以 D: 开头。没有前缀通常是被别的工具写坏的，
+                    // 此时 Acrobat / 资源管理器读不出时间，界面上要明确提示。
+                    if !text.trim_start().starts_with("D:") {
+                        display = format!("⚠ {display}");
+                    }
+                    metadata::push_field(fields, field_key, "文档信息", label, display);
+                    // 把文件里真实的日期串一并带上，避免“展示值看起来不对”时无从核对。
+                    metadata::attach_raw(fields, text);
                 } else {
-                    text
-                };
-                metadata::push_field(fields, field_key, "文档信息", label, display);
+                    metadata::push_field(fields, field_key, "文档信息", label, text);
+                }
             }
         }
     }
@@ -226,7 +236,7 @@ fn apply_info_dictionary(doc: &mut Document, rules: &[FieldRule]) -> Result<()> 
     };
 
     let mut remove_all = true;
-    for (pdf_key, field_key, _, _) in INFO_FIELDS {
+    for (pdf_key, field_key, _, is_date) in INFO_FIELDS {
         match resolve_action(field_key, rules) {
             ResolvedAction::Keep => {
                 if info.get(*pdf_key).is_ok() {
@@ -238,9 +248,17 @@ fn apply_info_dictionary(doc: &mut Document, rules: &[FieldRule]) -> Result<()> 
             }
             ResolvedAction::Set(value) => {
                 remove_all = false;
+                // 日期字段必须写 PDF 原生语法（D:YYYYMMDDHHMMSS+08'00'），
+                // 直接写用户看到的 “2026-09-14 09:50:53” 会让 Acrobat 读不出来。
+                let stored = if *is_date {
+                    metadata::to_pdf_date(value)
+                        .ok_or_else(|| ClearMetaError::InvalidDate(value.to_string()))?
+                } else {
+                    value.to_string()
+                };
                 info.set(
                     *pdf_key,
-                    Object::String(value.as_bytes().to_vec(), lopdf::StringFormat::Literal),
+                    Object::String(stored.as_bytes().to_vec(), lopdf::StringFormat::Literal),
                 );
             }
         }
@@ -301,7 +319,15 @@ fn apply_xmp_streams(doc: &mut Document, rules: &[FieldRule]) -> Result<()> {
                     }
                 }
                 ResolvedAction::Set(value) => {
-                    let escaped = metadata::escape_xml_text(value);
+                    // XMP 的日期是 ISO 8601（2026-09-14T09:50:53+08:00），
+                    // 与 Info 字典的 D: 语法不同，不能混用同一份文本。
+                    let stored = if XMP_DATE_TAGS.contains(tag) {
+                        metadata::to_xmp_date(value)
+                            .ok_or_else(|| ClearMetaError::InvalidDate(value.to_string()))?
+                    } else {
+                        value.to_string()
+                    };
+                    let escaped = metadata::escape_xml_text(&stored);
                     let inner = format!("<{tag}>{escaped}</{tag}>");
                     xmp = metadata::set_xml_element_by_local_name(&xmp, tag, &inner);
                     changed = true;

@@ -11,13 +11,14 @@ use error::{ClearMetaError, Result};
 pub use processor::{apply_file, read_file_metadata};
 use processor::{
     apply_options_clear_all, is_supported_path, resolve_output_path, scan_folder, SupportedFormats,
+    FS_GROUP,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 pub use apply::{FieldAction, FieldRule};
-pub use metadata::MetadataField;
+pub use metadata::{to_pdf_date, to_w3cdtf, to_xmp_date, MetadataField};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -142,7 +143,8 @@ fn process_one(app: &tauri::AppHandle, path: &str, options: &ApplyOptions) -> Pr
     };
 
     let before_fields = read_file_metadata(&input).unwrap_or_default();
-    let before_count = before_fields.len();
+    // 文件属性只是展示用的对照信息，不参与“多少项元数据”的统计。
+    let before_count = before_fields.iter().filter(|f| f.group != FS_GROUP).count();
     let clear_all = apply_options_clear_all(options);
 
     // 覆盖原文件前先备份，失败可恢复。（时间戳还原在 processor::apply_file 内统一处理）
@@ -266,6 +268,9 @@ fn count_changes(before: &[metadata::MetadataField], after: Option<&Vec<metadata
     let mut modified = 0usize;
 
     for field in before {
+        if field.group == FS_GROUP {
+            continue;
+        }
         match after_map.get(field.key.as_str()) {
             None => removed += 1,
             Some(value) if *value != field.value => modified += 1,

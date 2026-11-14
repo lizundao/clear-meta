@@ -3,13 +3,19 @@
 #   powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1             # build + package
 #   powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1 -SkipBuild  # package only
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "",
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
+
+# 版本号默认从 tauri.conf.json 读，避免包名和真实版本脱节（曾出现 0.1.0 写死）。
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $conf = Get-Content (Join-Path $Root "src-tauri\tauri.conf.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $Version = $conf.version
+}
 
 # 版本号会拼进输出路径并用于 Remove-Item，必须严格校验，防误删目录。
 if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$') {

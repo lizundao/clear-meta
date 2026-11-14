@@ -4,7 +4,13 @@ export function fieldKey(field: MetadataField): string {
   return `${field.group}::${field.name}`;
 }
 
+// 文件属性（资源管理器时间）不属于被清除的文档元数据，
+// 不进对比表与处理报告，避免出现「仍存在」的误导。
+export const FS_GROUP = "文件属性";
+
 export function buildCompareRows(before: MetadataField[], after: MetadataField[]) {
+  before = before.filter((f) => f.group !== FS_GROUP);
+  after = after.filter((f) => f.group !== FS_GROUP);
   const afterMap = new Map(after.map((f) => [fieldKey(f), f.value]));
   const beforeMap = new Map(before.map((f) => [fieldKey(f), f]));
 

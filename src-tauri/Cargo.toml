@@ -1,6 +1,6 @@
 [package]
 name = "clear-meta"
-version = "0.1.1"
+version = "0.1.2"
 description = "桌面工具：PDF / Office / 图片元数据管理"
 authors = ["clear-meta"]
 edition = "2021"
@@ -25,6 +25,7 @@ regex = "1"
 kamadak-exif = "0.6"
 walkdir = "2"
 filetime = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [profile.release]
 # 文件处理路径上不允许 unwind 穿越 FFI 边界；任何异常直接终止，避免半写入状态。

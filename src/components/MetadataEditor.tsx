@@ -1,12 +1,31 @@
+import { useState } from "react";
 import { Pencil, X } from "lucide-react";
 import type { FieldAction, FieldEditState, MetadataField } from "../types";
 import { defaultEditState } from "../utils/metadataRules";
+import DateTimePicker, { nowText } from "./DateTimePicker";
 
 interface MetadataEditorProps {
   fields: MetadataField[];
   states: Record<string, FieldEditState>;
   onChange: (key: string, patch: Partial<FieldEditState>) => void;
   onBatchChange: (next: Record<string, FieldEditState>) => void;
+}
+
+// 时间字段写回时必须用对应格式，编辑框给出格式提示，避免把展示文本写进文件。
+const DATE_KEYS = new Set([
+  "info:CreationDate",
+  "info:ModDate",
+  "xmp:CreateDate",
+  "xmp:ModifyDate",
+  "xmp:MetadataDate",
+  "core:created",
+  "core:modified",
+]);
+
+const FS_GROUP = "文件属性";
+
+function isDateField(field: MetadataField) {
+  return DATE_KEYS.has(field.key);
 }
 
 function groupFields(fields: MetadataField[]) {
@@ -45,6 +64,8 @@ export default function MetadataEditor({
   onChange,
   onBatchChange,
 }: MetadataEditorProps) {
+  // 正在选择时间的字段 key（弹窗只对时间字段出现）
+  const [pickerKey, setPickerKey] = useState<string | null>(null);
   const grouped = groupFields(fields);
 
   if (grouped.length === 0) {
@@ -111,7 +132,10 @@ export default function MetadataEditor({
                         {!readonly && <FieldActionMark action={state.action} />}
                       </span>
                     </td>
-                    <td className="mono-cell">{field.value}</td>
+                    <td className="mono-cell">
+                      {field.value}
+                      {field.raw && <span className="field-raw">原文 {field.raw}</span>}
+                    </td>
                     <td>
                       {readonly ? (
                         <span className="readonly-tag">只读</span>
@@ -134,6 +158,17 @@ export default function MetadataEditor({
                     <td>
                       {readonly || state.action !== "set" ? (
                         <span className="muted-text">—</span>
+                      ) : isDateField(field) ? (
+                        <button
+                          type="button"
+                          className="date-pick"
+                          onClick={() => setPickerKey(field.key)}
+                        >
+                          <span className="date-pick-value">
+                            {state.value || "选择时间"}
+                          </span>
+                          <span className="date-pick-action">选择</span>
+                        </button>
                       ) : (
                         <input
                           type="text"
@@ -153,6 +188,30 @@ export default function MetadataEditor({
           </table>
         </div>
       ))}
+
+      {(() => {
+        const target = fields.find((f) => f.key === pickerKey);
+        if (!target) return null;
+        const fsTime = (name: string) =>
+          fields.find((f) => f.group === FS_GROUP && f.name === name)?.value ?? "";
+        const quick = [
+          { label: "用属性·修改时间", value: fsTime("修改时间") },
+          { label: "用属性·创建时间", value: fsTime("创建时间") },
+          { label: "当前时间", value: nowText() },
+        ].filter((q) => q.value);
+        return (
+          <DateTimePicker
+            title={`选择${target.name}`}
+            initial={states[target.key]?.value ?? target.value}
+            quick={quick}
+            onCancel={() => setPickerKey(null)}
+            onConfirm={(value) => {
+              onChange(target.key, { action: "set", value });
+              setPickerKey(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

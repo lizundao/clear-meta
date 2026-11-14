@@ -41,6 +41,8 @@ export interface MetadataField {
   name: string;
   value: string;
   editable?: boolean;
+  /** 文件里实际存的原始串（如 PDF 的 D:20260914095053+08'00'），与 value 不同时才有 */
+  raw?: string;
 }
 
 export interface MetadataPreview {

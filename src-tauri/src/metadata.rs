@@ -7,6 +7,10 @@ pub struct MetadataField {
     pub name: String,
     pub value: String,
     pub editable: bool,
+    /// 文件里实际存的原始串（如 PDF 日期 D:20260914095053+08'00'）。
+    /// 与 value（给人看的格式）不同时才带上，便于核对“为什么和属性面板不一致”。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,8 +82,110 @@ fn push_field_with_editable(
             name: name.to_string(),
             value: trimmed.to_string(),
             editable,
+            raw: None,
         });
     }
+}
+
+/// 给刚写入的字段补上原始串（仅当与展示值不同）。
+pub fn attach_raw(fields: &mut [MetadataField], raw: String) {
+    if let Some(last) = fields.last_mut() {
+        if last.value != raw {
+            last.raw = Some(raw);
+        }
+    }
+}
+
+/// 把用户输入 / 展示文本规范化为 PDF 日期串 `D:YYYYMMDDHHMMSS+HH'mm'`。
+/// 支持 `2026-09-14 09:50:53`、`2026/09/14 09:50:53`、ISO 8601 以及本来就是
+/// `D:` 开头的值。写回时必须走这里，绝不能把给人看的格式直接塞进文件。
+pub fn to_pdf_date(value: &str) -> Option<String> {
+    let dt = parse_datetime(value)?;
+    let offset = dt.offset().local_minus_utc();
+    let sign = if offset < 0 { '-' } else { '+' };
+    let abs = offset.abs();
+    Some(format!(
+        "D:{}{}{:02}'{:02}'",
+        dt.format("%Y%m%d%H%M%S"),
+        sign,
+        abs / 3600,
+        (abs % 3600) / 60
+    ))
+}
+
+/// 规范化为 XMP 日期串（ISO 8601 带时区），如 `2026-09-14T09:50:53+08:00`。
+pub fn to_xmp_date(value: &str) -> Option<String> {
+    let dt = parse_datetime(value)?;
+    Some(dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
+}
+
+/// 规范化为 Office 的 W3CDTF（UTC），如 `2026-09-14T01:50:53Z`。
+pub fn to_w3cdtf(value: &str) -> Option<String> {
+    let dt = parse_datetime(value)?;
+    Some(
+        dt.with_timezone(&chrono::Utc)
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string(),
+    )
+}
+
+fn parse_datetime(value: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+
+    let text = value.trim();
+    let text = text.strip_prefix("D:").unwrap_or(text);
+
+    // 已经是 PDF 原生格式：20260914095053+08'00'
+    if text.len() >= 14 && text.as_bytes()[..14].iter().all(u8::is_ascii_digit) {
+        let naive = NaiveDateTime::parse_from_str(&text[..14], "%Y%m%d%H%M%S").ok()?;
+        return match parse_pdf_offset(&text[14..]) {
+            Some(offset) => offset.from_local_datetime(&naive).single(),
+            None => Local.from_local_datetime(&naive).single().map(|dt| dt.fixed_offset()),
+        };
+    }
+
+    // ISO 8601（带时区）
+    if let Ok(dt) = DateTime::parse_from_rfc3339(text) {
+        return Some(dt);
+    }
+
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(text, fmt) {
+            return Local.from_local_datetime(&naive).single().map(|dt| dt.fixed_offset());
+        }
+    }
+
+    None
+}
+
+/// 解析 PDF 日期的时间段尾巴：`+08'00'` / `-05'30'` / `Z`。
+fn parse_pdf_offset(tail: &str) -> Option<chrono::FixedOffset> {
+    use chrono::FixedOffset;
+
+    let t = tail.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.starts_with('Z') || t.starts_with('z') {
+        return FixedOffset::east_opt(0);
+    }
+    let bytes = t.as_bytes();
+    let sign = match bytes.first()? {
+        b'+' => 1i32,
+        b'-' => -1i32,
+        _ => return None,
+    };
+    let digits: String = t[1..].chars().filter(char::is_ascii_digit).collect();
+    if digits.len() < 2 {
+        return None;
+    }
+    let hours: i32 = digits[..2].parse().ok()?;
+    let minutes: i32 = if digits.len() >= 4 {
+        digits[2..4].parse().ok()?
+    } else {
+        0
+    };
+    FixedOffset::east_opt(sign * (hours * 3600 + minutes * 60))
 }
 
 pub fn remove_xml_element_by_local_name(xml: &str, local_name: &str) -> String {

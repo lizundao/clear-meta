@@ -38,6 +38,9 @@ pub enum ClearMetaError {
     #[error("疑似压缩包炸弹: {0}")]
     ArchiveBomb(String),
 
+    #[error("时间格式无法识别：{0}。请按 2026-09-14 09:50:53 这样的格式填写")]
+    InvalidDate(String),
+
     #[error("内部状态错误: {0}")]
     Internal(String),
 }

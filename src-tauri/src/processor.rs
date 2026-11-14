@@ -1,7 +1,7 @@
 use crate::apply::{self, ApplyOptions, FieldRule};
 use crate::error::{ClearMetaError, Result};
 use crate::image;
-use crate::metadata::MetadataField;
+use crate::metadata::{self, MetadataField};
 use crate::office;
 use crate::pdf;
 use crate::safety;
@@ -91,7 +91,10 @@ pub fn read_file_metadata(input: &Path) -> Result<Vec<MetadataField>> {
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    if is_pdf_ext(&ext) {
+    // 文件属性（资源管理器「属性」里的那套时间）放最前面展示：
+    // 用户核对时间时第一反应就是右键属性，两套时间摆在一起才对得上。
+    let mut fields = read_fs_attributes(input);
+    let meta_fields = if is_pdf_ext(&ext) {
         pdf::read_pdf_metadata(input)
     } else if is_office_ext(&ext) {
         office::read_office_metadata(input)
@@ -99,7 +102,56 @@ pub fn read_file_metadata(input: &Path) -> Result<Vec<MetadataField>> {
         image::read_image_metadata(input)
     } else {
         Err(ClearMetaError::UnsupportedFormat(ext))
+    };
+    fields.extend(meta_fields?);
+    Ok(fields)
+}
+
+/// 读取文件系统层面的创建 / 修改 / 访问时间。
+/// 这些时间不属于文档元数据：不会被清除规则触碰，也全部标为只读，
+/// 编辑器（editable = false）与规则引擎都会跳过。
+pub fn read_fs_attributes(path: &Path) -> Vec<MetadataField> {
+    let mut fields = Vec::new();
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return fields,
+    };
+
+    if let Ok(created) = meta.created() {
+        metadata::push_field_readonly(
+            &mut fields,
+            "fs.created",
+            FS_GROUP,
+            "创建时间",
+            format_system_time(created),
+        );
     }
+    if let Ok(modified) = meta.modified() {
+        metadata::push_field_readonly(
+            &mut fields,
+            "fs.modified",
+            FS_GROUP,
+            "修改时间",
+            format_system_time(modified),
+        );
+    }
+    if let Ok(accessed) = meta.accessed() {
+        metadata::push_field_readonly(
+            &mut fields,
+            "fs.accessed",
+            FS_GROUP,
+            "访问时间",
+            format_system_time(accessed),
+        );
+    }
+    fields
+}
+
+/// 文件属性分组名，前端据此在对比表 / 统计中排除。
+pub const FS_GROUP: &str = "文件属性";
+
+fn format_system_time(t: std::time::SystemTime) -> String {
+    chrono::DateTime::<chrono::Local>::from(t).format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 pub fn apply_file(input: &Path, output: &Path, rules: &[FieldRule], clear_all: bool) -> Result<()> {
